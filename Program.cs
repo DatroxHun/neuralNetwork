@@ -70,6 +70,7 @@ namespace neuralNetwork
                 result = network.Push(input).First().Key;
 
                 Console.WriteLine();
+                // A note by Z0mzi
 
                 Console.WriteLine("input: " + (input[0] * 2 + input[1]).ToString());
                 Console.WriteLine("output: " + result.ToString());
