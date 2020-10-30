@@ -78,7 +78,7 @@ namespace neuralNetwork
         {
             public List<List<Node>> web = new List<List<Node>>();
 
-            private float punishScale = .25f;//the bigger the scale the more agressive the change when the network is being punished
+            private float punishScale = .25f;//the bigger the scale the more agressive the change when the network is being punished 
             public float PunishScale
             {
                 get { return punishScale; }
