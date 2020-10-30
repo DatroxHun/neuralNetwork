@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data.OleDb;
+using System.Globalization;
 using System.Linq;
+using System.Net.NetworkInformation;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,7 +25,10 @@ namespace neuralNetwork
             int result = 0;
             int correct = 0;
 
-            for (int i = 0; correct != 4 && i < 100000; i++)
+            network.PunishMultiplier = .1f;
+            network.RewardScale = .05f;
+
+            for (int i = 0; i < 100000; i++)
             {
                 correct = 0;
 
@@ -35,7 +41,7 @@ namespace neuralNetwork
 
                     if (result == (input[0] * 2 + input[1]))
                     {
-                        network.Reward(result);
+                        //network.Reward(result);
                         correct++;
                     }
                     else
@@ -50,17 +56,6 @@ namespace neuralNetwork
                     break;
                 }
             }
-
-            //Console.WriteLine(input[0].ToString());
-            //Console.WriteLine(input[1].ToString());
-
-            //Console.WriteLine();
-
-            //Console.WriteLine("input: " + (input[0] * 2 + input[1]).ToString());
-            //Console.WriteLine("output: " + result.ToString());
-
-            //Console.WriteLine();
-            //Console.WriteLine();
 
             while (true)
             {
@@ -77,12 +72,39 @@ namespace neuralNetwork
                 Console.WriteLine();
                 Console.WriteLine();
             }
-
         }
 
         public class Network
         {
             public List<List<Node>> web = new List<List<Node>>();
+
+            private float punishScale = .25f;//the bigger the scale the more agressive the change when the network is being punished
+            public float PunishScale
+            {
+                get { return punishScale; }
+                set { punishScale = Math.Max(Math.Min(value, 1f), 0f); }
+            }
+
+            private float rewardScale = .25f;//the bigger the scale the more agressive the change when the network is being rewarded
+            public float RewardScale
+            {
+                get { return rewardScale; }
+                set { rewardScale = Math.Max(Math.Min(value, 1f), 0f); }
+            }
+
+            private float punishMultiplier = .5f;//this multiplier controls the strength of side punishing when rewarding
+            public float PunishMultiplier
+            {
+                get { return punishMultiplier; }
+                set { punishMultiplier = Math.Max(Math.Min(value, 1f), 0f); }
+            }
+
+            private float rewardMultiplier = .5f;//this multiplier controls the strength of side rewarding when punishing
+            public float RewardMultiplier
+            {
+                get { return rewardMultiplier; }
+                set { rewardMultiplier = Math.Max(Math.Min(value, 1f), 0f); }
+            }
 
             public Network()
             {
@@ -136,11 +158,38 @@ namespace neuralNetwork
                 return results.OrderByDescending(x => x.Value).ToDictionary(x => x.Key, x => x.Value);
             }
 
+            void NodePunish(int _punishedNodeColumn, int _punishedNode, int _punishedConnection, float _multiplier = 1f)
+            {
+                float punishmentAmount = web[_punishedNodeColumn][_punishedNode].connections[_punishedConnection] * .25f * _multiplier;
+                web[_punishedNodeColumn][_punishedNode].connections[_punishedConnection] -= punishmentAmount;
+
+                for (int i = 0; i < web[_punishedNodeColumn][_punishedNode].connections.Count; i++)
+                {
+                    if (_punishedConnection != i)
+                    {
+                        web[_punishedNodeColumn][_punishedNode].connections[i] += punishmentAmount / (float)(web[_punishedNodeColumn][_punishedNode].connections.Count - 1f);
+                    }
+                }
+            }
+
+            void NodeReward(int _rewardedNodeColumn, int _rewardedNode, int _rewardedConnection, float _multiplier = 1f)
+            {
+                float rewardAmount = (1f - web[_rewardedNodeColumn][_rewardedNode].connections[_rewardedConnection]) * .25f * _multiplier;
+                web[_rewardedNodeColumn][_rewardedNode].connections[_rewardedConnection] += rewardAmount;
+
+                for (int i = 0; i < web[_rewardedNodeColumn][_rewardedNode].connections.Count; i++)
+                {
+                    if (_rewardedConnection != i)
+                    {
+                        web[_rewardedNodeColumn][_rewardedNode].connections[i] -= rewardAmount / (float)(web[_rewardedNodeColumn][_rewardedNode].connections.Count - 1f);
+                    }
+                }
+            }
+
             public void Punish(int _punishedEndNode)
             {
                 int currentPunishedNodeId = _punishedEndNode;
                 int currentPunishedConnectionId;
-                float punishmentAmount;
 
                 Dictionary<int, float> connectionsId = new Dictionary<int, float>();
 
@@ -153,14 +202,13 @@ namespace neuralNetwork
                     }
 
                     currentPunishedConnectionId = connectionsId.OrderByDescending(x => x.Value).First().Key;
-                    punishmentAmount = web[i][currentPunishedNodeId].connections[currentPunishedConnectionId] * .45f;
-                    web[i][currentPunishedNodeId].connections[currentPunishedConnectionId] -= punishmentAmount;
+                    NodePunish(i, currentPunishedNodeId, currentPunishedConnectionId);
 
-                    for (int j = 0; j < web[i][currentPunishedNodeId].connections.Count; j++)
+                    for (int j = 0; j < web[i].Count; j++)
                     {
-                        if (currentPunishedConnectionId != j)
+                        if (currentPunishedNodeId != j)
                         {
-                            web[i][currentPunishedNodeId].connections[j] += punishmentAmount / (float)(web[i][currentPunishedNodeId].connections.Count - 1f);
+                            NodeReward(i, j, currentPunishedConnectionId, rewardMultiplier);
                         }
                     }
 
@@ -172,7 +220,6 @@ namespace neuralNetwork
             {
                 int currentRewardedNodeId = _rewardedEndNode;
                 int currentRewardedConnectionId;
-                float rewardAmount;
 
                 Dictionary<int, float> connectionsId = new Dictionary<int, float>();
 
@@ -185,14 +232,13 @@ namespace neuralNetwork
                     }
 
                     currentRewardedConnectionId = connectionsId.OrderByDescending(x => x.Value).First().Key;
-                    rewardAmount = (1f - web[i][currentRewardedNodeId].connections[currentRewardedConnectionId]) / 8f;
-                    web[i][currentRewardedNodeId].connections[currentRewardedConnectionId] += rewardAmount;
+                    NodeReward(i, currentRewardedNodeId, currentRewardedConnectionId);
 
-                    for (int j = 0; j < web[i][currentRewardedNodeId].connections.Count; j++)
+                    for (int j = 0; j < web[i].Count; j++)
                     {
-                        if (currentRewardedConnectionId != j)
+                        if (currentRewardedNodeId != j)
                         {
-                            web[i][currentRewardedNodeId].connections[j] -= rewardAmount / (float)(web[i][currentRewardedNodeId].connections.Count - 1f);
+                            NodePunish(i, j, currentRewardedConnectionId, punishMultiplier);
                         }
                     }
 
